@@ -1,92 +1,116 @@
-import { Connection, Keypair, PublicKey, Transaction, SystemProgram } from '@solana/web3.js';
-import { getAssociatedTokenAddressSync, TOKEN_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID } from '@solana/spl-token';
+import { Connection, Keypair, PublicKey } from '@solana/web3.js';
 
-const BONDING_CURVE_PROGRAM_ID = new PublicKey('21ACVywCBCgrgAx8HpLJM6mJC8pxMzvvi58in5Xv7qej');
+/**
+ * RAYDIUM STANDARD AMM POOL CREATION
+ * 
+ * After graduate_token:
+ * - Platform has 200M tokens
+ * - Bonding curve has 75 SOL
+ * - Creator received 2 SOL
+ * 
+ * Standard AMM Pool Setup:
+ * 1. Create OpenBook market first
+ * 2. Create Raydium AMM pool with market
+ * 3. Add liquidity (75 SOL + 200M tokens)
+ * 4. Burn LP tokens to lock liquidity permanently
+ */
 
-export async function callGraduateToken(
+export async function createRaydiumStandardPool(
   connection: Connection,
-  platformKeypair: Keypair,
-  mintAddress: string,
+  payer: Keypair,
+  tokenMint: PublicKey,
+  tokenAmount: number, // 200M tokens with decimals
+  solAmount: number, // 75 SOL in lamports
 ) {
-  try {
-    console.log('🎓 Calling graduate_token for:', mintAddress);
-    
-    const mintPubkey = new PublicKey(mintAddress);
-    
-    // Derive bonding curve PDA
-    const [bondingCurvePDA] = PublicKey.findProgramAddressSync(
-      [Buffer.from('bonding-curve'), mintPubkey.toBuffer()],
-      BONDING_CURVE_PROGRAM_ID
-    );
-    
-    // Get bonding curve data to find creator
-    const curveAccount = await connection.getAccountInfo(bondingCurvePDA);
-    if (!curveAccount) {
-      throw new Error('Bonding curve not found');
-    }
-    
-    const creator = new PublicKey(curveAccount.data.slice(8, 40));
-    
-    console.log('Creator:', creator.toBase58());
-    
-    // Get token accounts
-    const bondingCurveTokenAccount = getAssociatedTokenAddressSync(
-      mintPubkey,
-      bondingCurvePDA,
-      true
-    );
-    
-    const platformTokenAccount = getAssociatedTokenAddressSync(
-      mintPubkey,
-      platformKeypair.publicKey
-    );
-    
-    // Create graduate_token instruction
-    // Discriminator for graduate_token (you need to get this from your IDL)
-    const discriminator = Buffer.from([
-      // Add your graduate_token discriminator here
-      // You can get it by running: anchor idl parse
-      0x9d, 0x4b, 0x8f, 0x3e, 0x5a, 0x7c, 0x1b, 0x2a // PLACEHOLDER - replace with actual
-    ]);
-    
-    const keys = [
-      { pubkey: platformKeypair.publicKey, isSigner: true, isWritable: true }, // platform_authority
-      { pubkey: creator, isSigner: false, isWritable: true }, // creator
-      { pubkey: bondingCurvePDA, isSigner: false, isWritable: true }, // bonding_curve
-      { pubkey: mintPubkey, isSigner: false, isWritable: true }, // token_mint
-      { pubkey: bondingCurveTokenAccount, isSigner: false, isWritable: true }, // bonding_curve_token_account
-      { pubkey: platformTokenAccount, isSigner: false, isWritable: true }, // platform_token_account
-      { pubkey: SystemProgram.programId, isSigner: false, isWritable: false }, // system_program
-      { pubkey: TOKEN_PROGRAM_ID, isSigner: false, isWritable: false }, // token_program
-      { pubkey: ASSOCIATED_TOKEN_PROGRAM_ID, isSigner: false, isWritable: false }, // associated_token_program
-      { pubkey: new PublicKey('SysvarRent111111111111111111111111111111111'), isSigner: false, isWritable: false }, // rent
-    ];
-    
-    const instruction = {
-      keys,
-      programId: BONDING_CURVE_PROGRAM_ID,
-      data: discriminator,
-    };
-    
-    const transaction = new Transaction().add(instruction);
-    transaction.feePayer = platformKeypair.publicKey;
-    transaction.recentBlockhash = (await connection.getLatestBlockhash()).blockhash;
-    
-    // Sign and send
-    transaction.sign(platformKeypair);
-    const txid = await connection.sendRawTransaction(transaction.serialize());
-    await connection.confirmTransaction(txid, 'confirmed');
-    
-    console.log('✅ graduate_token called successfully! TX:', txid);
-    
-    return {
-      success: true,
-      txid,
-      platformTokenAccount: platformTokenAccount.toBase58(),
-    };
-    
-  } catch (error) {
-    console.error('❌ Error calling graduate_token:', error);
-    throw error;
-  }
+  console.log('📋 Raydium Standard AMM Pool Creation Instructions:');
+  console.log('');
+  console.log('=== Step 1: Create OpenBook Market ===');
+  console.log('1. Go to: https://openserum.io/');
+  console.log('2. Connect wallet with platform keypair');
+  console.log('3. Create new market for your token:');
+  console.log('   - Base Token:', tokenMint.toBase58());
+  console.log('   - Quote Token: SOL (So11111111111111111111111111111111111111112)');
+  console.log('   - Min Order Size: 0.01');
+  console.log('   - Tick Size: 0.000001');
+  console.log('4. Save the Market ID');
+  console.log('');
+  console.log('=== Step 2: Create Raydium Pool ===');
+  console.log('1. Go to: https://raydium.io/liquidity/create/');
+  console.log('2. Select "Standard AMM"');
+  console.log('3. Input:');
+  console.log('   - Market ID: [from step 1]');
+  console.log('   - Base Token:', tokenMint.toBase58());
+  console.log('   - Quote Token: SOL');
+  console.log('   - Initial Liquidity:');
+  console.log('     * Token Amount:', tokenAmount / 1e6, 'M tokens');
+  console.log('     * SOL Amount:', solAmount / 1e9, 'SOL');
+  console.log('4. Click "Create Pool"');
+  console.log('5. Save the Pool ID and LP Token Mint');
+  console.log('');
+  console.log('=== Step 3: Burn LP Tokens ===');
+  console.log('1. Send ALL LP tokens to burn address: 11111111111111111111111111111111');
+  console.log('2. This locks liquidity permanently');
+  console.log('');
+  
+  return {
+    success: true,
+    step: 'manual_creation',
+    instructions: {
+      step1: {
+        name: 'Create OpenBook Market',
+        url: 'https://openserum.io/',
+        baseToken: tokenMint.toBase58(),
+        quoteToken: 'SOL (So11111111111111111111111111111111111111112)',
+        minOrderSize: '0.01',
+        tickSize: '0.000001',
+      },
+      step2: {
+        name: 'Create Raydium AMM Pool',
+        url: 'https://raydium.io/liquidity/create/',
+        poolType: 'Standard AMM',
+        tokenMint: tokenMint.toBase58(),
+        tokenAmount: `${tokenAmount / 1e6}M tokens`,
+        solAmount: `${solAmount / 1e9} SOL`,
+      },
+      step3: {
+        name: 'Burn LP Tokens',
+        burnAddress: '11111111111111111111111111111111',
+        note: 'Send ALL LP tokens to this address to lock liquidity',
+      },
+    },
+  };
+}
+
+export async function burnLPTokens(
+  connection: Connection,
+  payer: Keypair,
+  lpMint: PublicKey,
+) {
+  console.log('🔥 LP Token Burn Instructions:');
+  console.log('1. LP Token Mint:', lpMint.toBase58());
+  console.log('2. Transfer all LP tokens to: 11111111111111111111111111111111');
+  console.log('3. Use any Solana wallet or CLI');
+  console.log('4. Command: spl-token transfer <LP_MINT> ALL 11111111111111111111111111111111 --owner <PLATFORM_WALLET>');
+  
+  return {
+    success: true,
+    instructions: {
+      lpMint: lpMint.toBase58(),
+      burnAddress: '11111111111111111111111111111111',
+      command: `spl-token transfer ${lpMint.toBase58()} ALL 11111111111111111111111111111111`,
+    },
+  };
+}
+
+// Automated version (requires Raydium SDK v2 - coming soon)
+export async function createRaydiumPoolAutomated(
+  connection: Connection,
+  payer: Keypair,
+  marketId: PublicKey, // OpenBook market
+  tokenMint: PublicKey,
+  tokenAmount: number,
+  solAmount: number,
+) {
+  // This will be implemented when Raydium releases their SDK v2
+  throw new Error('Automated pool creation coming soon. Use manual process for now.');
 }

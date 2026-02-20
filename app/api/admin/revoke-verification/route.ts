@@ -1,0 +1,1 @@
+// Similar to verify-social but calls revoke_verification function

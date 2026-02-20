@@ -19,13 +19,19 @@ export async function GET(request: NextRequest) {
         try {
           const data = account.data;
           
-          // Parse bonding curve data
-          const graduated = data[187] === 1; // graduated boolean at offset 187
-          if (!graduated) return null;
-          
+          // Parse bonding curve data with CORRECT offsets
           const creator = new PublicKey(data.slice(8, 40));
           const tokenMint = new PublicKey(data.slice(40, 72));
-          const realSolReserves = Number(data.readBigUInt64LE(96)) / 1_000_000_000;
+          
+          // Read graduated flag (offset 187)
+          const graduated = data[187] === 1;
+          if (!graduated) return null;
+          
+          // Read real_sol_reserves (offset 152) - u64 little endian
+          const realSolReserves = Number(data.readBigUInt64LE(152));
+          
+          // Read real_token_reserves (offset 160) - u64 little endian
+          const realTokenReserves = Number(data.readBigUInt64LE(160));
           
           // Fetch token metadata
           const metadataAccounts = await connection.getProgramAccounts(TOKEN_FACTORY_PROGRAM_ID, {
@@ -58,10 +64,10 @@ export async function GET(request: NextRequest) {
             symbol,
             creator: creator.toBase58(),
             bondingCurve: pubkey.toBase58(),
-            solInCurve: realSolReserves,
-            tokensInCurve: 200, // 200M LP tokens available
-            graduatedAt: Date.now() / 1000, // You'd store this on-chain or in DB
-            lpCreated: false, // Track this in a database
+            solInCurve: realSolReserves / 1e9, // Convert lamports to SOL
+            tokensInCurve: realTokenReserves / 1e6 / 1e6, // Convert to millions
+            graduatedAt: Date.now() / 1000,
+            lpCreated: false,
           };
         } catch (error) {
           console.error('Error parsing token:', error);

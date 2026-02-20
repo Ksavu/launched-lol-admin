@@ -1,73 +1,68 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { Connection, Keypair } from '@solana/web3.js';
-import { callGraduateToken } from '../../../../lib/graduate-token';
-import { createRaydiumCPMMPool, burnLPTokens } from '../../../../lib/raydium-helper';
+import { Connection, Keypair, PublicKey } from '@solana/web3.js';
+import { processGraduationFunds } from '../../../../lib/process-graduation-funds';
+import { createRaydiumStandardPool } from '../../../../lib/raydium-helper';
 
 const connection = new Connection('https://api.devnet.solana.com', 'confirmed');
 
 export async function POST(request: NextRequest) {
-  const { mint } = await request.json();
-  
   try {
-    console.log('🚀 Starting graduation process for:', mint);
-    
-    // Load platform wallet keypair
+    const { bondingCurve, tokenMint } = await request.json();
+
     const platformSecret = process.env.PLATFORM_WALLET_SECRET_KEY;
     if (!platformSecret) {
-      throw new Error('PLATFORM_WALLET_SECRET_KEY not set in environment');
+      throw new Error('Platform wallet not configured');
     }
-    
+
     const platformKeypair = Keypair.fromSecretKey(
       Uint8Array.from(JSON.parse(platformSecret))
     );
-    
-    console.log('Platform wallet:', platformKeypair.publicKey.toBase58());
-    
-    // Step 1: Call graduate_token to get 200M tokens + send 2 SOL to creator
-    console.log('📝 Step 1: Calling graduate_token...');
-    const graduateResult = await callGraduateToken(
+
+    // Get creator from bonding curve
+    const bondingCurveAddress = new PublicKey(bondingCurve);
+    const curveAccount = await connection.getAccountInfo(bondingCurveAddress);
+    if (!curveAccount) {
+      throw new Error('Bonding curve not found');
+    }
+    const creator = new PublicKey(curveAccount.data.slice(8, 40));
+
+    console.log('Step 1: Processing graduation funds (SOL distribution)...');
+    const fundsResult = await processGraduationFunds(
       connection,
       platformKeypair,
-      mint
+      bondingCurveAddress,
+      new PublicKey(tokenMint),
+      creator,
     );
-    
-    console.log('✅ Graduate TX:', graduateResult.txid);
-    
-    // Step 2: Create Raydium CPMM pool with 75 SOL + 200M tokens
-    console.log('🏊 Step 2: Creating Raydium pool...');
-    const poolResult = await createRaydiumCPMMPool(
+
+    console.log('✅ Funds distributed:', fundsResult.txid);
+
+    // Step 2: Get Raydium pool creation instructions
+    console.log('Step 2: Raydium pool creation instructions...');
+    const poolResult = await createRaydiumStandardPool(
       connection,
       platformKeypair,
-      mint,
-      75, // SOL
-      200_000_000 // 200M tokens
+      new PublicKey(tokenMint),
+      200_000_000_000_000, // 200M tokens with 6 decimals
+      75_000_000_000, // 75 SOL in lamports
     );
-    
-    console.log('✅ Pool created:', poolResult.poolAddress);
-    
-    // Step 3: Burn LP tokens (send to null address)
-    console.log('🔥 Step 3: Burning LP tokens...');
-    // const burnTx = await burnLPTokens(
-    //   connection,
-    //   platformKeypair,
-    //   poolResult.lpMint,
-    //   poolResult.lpAmount
-    // );
-    
-    console.log('✅ All steps completed!');
-    
-    return NextResponse.json({ 
+
+    return NextResponse.json({
       success: true,
-      graduateTxid: graduateResult.txid,
-      poolAddress: poolResult.poolAddress,
-      message: 'Pool created and LP tokens burned successfully'
+      funds: {
+        txid: fundsResult.txid,
+        platformReceived: '79 SOL (4 fee + 75 LP)',
+        creatorReceived: '2 SOL',
+      },
+      raydium: poolResult,
+      message: '✅ Funds distributed! Platform has 75 SOL + 200M tokens. Follow Raydium instructions.',
     });
-    
+
   } catch (error: any) {
-    console.error('❌ Error:', error);
-    return NextResponse.json({ 
+    console.error('Error:', error);
+    return NextResponse.json({
       success: false,
-      error: error.message 
+      error: error.message,
     }, { status: 500 });
   }
 }

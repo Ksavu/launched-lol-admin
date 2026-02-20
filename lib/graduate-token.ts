@@ -6,58 +6,52 @@ const BONDING_CURVE_PROGRAM_ID = new PublicKey('21ACVywCBCgrgAx8HpLJM6mJC8pxMzvv
 export async function callGraduateToken(
   connection: Connection,
   platformKeypair: Keypair,
-  mintAddress: string,
+  bondingCurveAddress: PublicKey,
+  mintAddress: PublicKey,
 ) {
   try {
-    console.log('🎓 Calling graduate_token for:', mintAddress);
-    
-    const mintPubkey = new PublicKey(mintAddress);
-    
-    // Derive bonding curve PDA
-    const [bondingCurvePDA] = PublicKey.findProgramAddressSync(
-      [Buffer.from('bonding-curve'), mintPubkey.toBuffer()],
-      BONDING_CURVE_PROGRAM_ID
-    );
+    console.log('🎓 Calling graduate_token');
+    console.log('Bonding Curve:', bondingCurveAddress.toBase58());
+    console.log('Mint:', mintAddress.toBase58());
     
     // Get bonding curve data to find creator
-    const curveAccount = await connection.getAccountInfo(bondingCurvePDA);
+    const curveAccount = await connection.getAccountInfo(bondingCurveAddress);
     if (!curveAccount) {
       throw new Error('Bonding curve not found');
     }
     
+    // Parse creator from bonding curve account (offset 8, 32 bytes)
     const creator = new PublicKey(curveAccount.data.slice(8, 40));
     console.log('Creator:', creator.toBase58());
     
     // Get token accounts
     const bondingCurveTokenAccount = getAssociatedTokenAddressSync(
-      mintPubkey,
-      bondingCurvePDA,
+      mintAddress,
+      bondingCurveAddress,
       true
     );
     
     const platformTokenAccount = getAssociatedTokenAddressSync(
-      mintPubkey,
+      mintAddress,
       platformKeypair.publicKey
     );
     
-    // Create instruction data (graduate_token discriminator)
-    const instructionData = Buffer.from([
-      0x9d, 0x4b, 0x8f, 0x3e, 0x5a, 0x7c, 0x1b, 0x2a // graduate_token discriminator
-    ]);
-    
-    // Build transaction with updated accounts for platform call
+    // Discriminator for graduate_token
+    // SHA256("global:graduate_token")[0..8]
+    const instructionData = Buffer.from([235, 199, 225, 44, 59, 251, 230, 25]); // graduate_token discriminator
+      
     const instruction = {
       keys: [
-        { pubkey: platformKeypair.publicKey, isSigner: true, isWritable: true }, // platform_authority
-        { pubkey: creator, isSigner: false, isWritable: true }, // creator
-        { pubkey: bondingCurvePDA, isSigner: false, isWritable: true }, // bonding_curve
-        { pubkey: mintPubkey, isSigner: false, isWritable: true }, // token_mint
-        { pubkey: bondingCurveTokenAccount, isSigner: false, isWritable: true }, // bonding_curve_token_account
-        { pubkey: platformTokenAccount, isSigner: false, isWritable: true }, // platform_token_account
-        { pubkey: SystemProgram.programId, isSigner: false, isWritable: false }, // system_program
-        { pubkey: TOKEN_PROGRAM_ID, isSigner: false, isWritable: false }, // token_program
-        { pubkey: ASSOCIATED_TOKEN_PROGRAM_ID, isSigner: false, isWritable: false }, // associated_token_program
-        { pubkey: new PublicKey('SysvarRent111111111111111111111111111111111'), isSigner: false, isWritable: false }, // rent
+        { pubkey: platformKeypair.publicKey, isSigner: true, isWritable: true },
+        { pubkey: creator, isSigner: false, isWritable: true },
+        { pubkey: bondingCurveAddress, isSigner: false, isWritable: true },
+        { pubkey: mintAddress, isSigner: false, isWritable: true },
+        { pubkey: bondingCurveTokenAccount, isSigner: false, isWritable: true },
+        { pubkey: platformTokenAccount, isSigner: false, isWritable: true },
+        { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
+        { pubkey: TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
+        { pubkey: ASSOCIATED_TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
+        { pubkey: new PublicKey('SysvarRent111111111111111111111111111111111'), isSigner: false, isWritable: false },
       ],
       programId: BONDING_CURVE_PROGRAM_ID,
       data: instructionData,
@@ -67,12 +61,12 @@ export async function callGraduateToken(
     transaction.feePayer = platformKeypair.publicKey;
     transaction.recentBlockhash = (await connection.getLatestBlockhash()).blockhash;
     
-    // Sign and send
     transaction.sign(platformKeypair);
     const txid = await connection.sendRawTransaction(transaction.serialize());
     await connection.confirmTransaction(txid, 'confirmed');
     
-    console.log('✅ graduate_token called successfully! TX:', txid);
+    console.log('✅ Graduation processed! TX:', txid);
+    console.log('Platform received 4 SOL + 200M tokens at:', platformTokenAccount.toBase58());
     
     return {
       success: true,
