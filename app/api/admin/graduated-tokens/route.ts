@@ -4,8 +4,6 @@ import { Connection, PublicKey } from '@solana/web3.js';
 const connection = new Connection('https://api.devnet.solana.com', 'confirmed');
 const BONDING_CURVE_PROGRAM_ID = new PublicKey('21ACVywCBCgrgAx8HpLJM6mJC8pxMzvvi58in5Xv7qej');
 const TOKEN_FACTORY_PROGRAM_ID = new PublicKey('7F4JYKAEs7VhVd9P8E1wHhd8aiwtKYeo1tTxabDqpCvX');
-const TOKEN_PROGRAM_ID = new PublicKey('TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA');
-const ATA_PROGRAM_ID = new PublicKey('ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL');
 
 export async function GET(request: NextRequest) {
   try {
@@ -35,6 +33,14 @@ export async function GET(request: NextRequest) {
           // Read real_token_reserves (offset 160) - u64 little endian
           const realTokenReserves = Number(data.readBigUInt64LE(160));
           
+          // Read dev_supply (offset 204) - u64 little endian
+          const devSupply = Number(data.readBigUInt64LE(204));
+          
+          // Dev tokens are claimed if dev_supply is 0 (released to creator)
+          const devTokensClaimed = devSupply === 0;
+          
+          console.log(`${pubkey.toBase58().slice(0, 8)}: dev_supply = ${devSupply / 1e6 / 1e6}M, claimed = ${devTokensClaimed}`);
+          
           // Fetch token metadata
           const metadataAccounts = await connection.getProgramAccounts(TOKEN_FACTORY_PROGRAM_ID, {
             filters: [
@@ -60,30 +66,6 @@ export async function GET(request: NextRequest) {
             symbol = metaData.slice(symbolOffset + 4, symbolOffset + 4 + symbolLength).toString('utf8');
           }
           
-          // Check if dev tokens were claimed
-          let devTokensClaimed = false;
-          try {
-            const [creatorTokenAccount] = PublicKey.findProgramAddressSync(
-              [
-                creator.toBuffer(),
-                TOKEN_PROGRAM_ID.toBuffer(),
-                tokenMint.toBuffer(),
-              ],
-              ATA_PROGRAM_ID
-            );
-            
-            const accountInfo = await connection.getAccountInfo(creatorTokenAccount);
-            
-            if (accountInfo) {
-              const balance = Number(accountInfo.data.readBigUInt64LE(64));
-              // If creator has 30M+ tokens (with 6 decimals = 30,000,000,000,000), they claimed
-              devTokensClaimed = balance >= 30_000_000_000_000;
-              console.log(`Dev tokens claimed for ${symbol}: ${devTokensClaimed} (balance: ${balance / 1e6 / 1e6}M)`);
-            }
-          } catch (error) {
-            console.log(`Could not check dev tokens for ${symbol}`);
-          }
-          
           // Get graduation timestamp (approximate from block time)
           let graduatedAt = Math.floor(Date.now() / 1000);
           
@@ -102,11 +84,11 @@ export async function GET(request: NextRequest) {
             symbol,
             creator: creator.toBase58(),
             bondingCurve: pubkey.toBase58(),
-            solInCurve: realSolReserves / 1e9, // Convert lamports to SOL
-            tokensInCurve: devTokensClaimed ? 200 : 230, // 200M if claimed, 230M if not (includes 30M dev)
+            solInCurve: realSolReserves / 1e9,
+            tokensInCurve: devTokensClaimed ? 200 : 230, // ✅ Correct: 200M if claimed, 230M if not
             graduatedAt,
             lpCreated: false,
-            devTokensClaimed, // Include this info
+            devTokensClaimed, // ✅ Based on dev_supply value
           };
         } catch (error) {
           console.error('Error parsing token:', error);
