@@ -16,6 +16,7 @@ interface GraduatedToken {
   graduatedAt: number;
   lpCreated: boolean;
   raydiumPool?: string;
+  devTokensClaimed?: boolean;
 }
 
 interface PoolInstructions {
@@ -57,6 +58,40 @@ const CopyButton = ({ text }: { text: string }) => {
       )}
     </button>
   );
+};
+
+// Add this helper function near the top
+const checkDevTokensClaimed = async (bondingCurve: string, creator: string, tokenMint: string) => {
+  try {
+    const connection = new Connection(process.env.NEXT_PUBLIC_RPC_URL || 'https://api.devnet.solana.com', 'confirmed');
+    const TOKEN_PROGRAM_ID = new PublicKey('TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA');
+    
+    // Get creator's token account
+    const mintPubkey = new PublicKey(tokenMint);
+    const creatorPubkey = new PublicKey(creator);
+    
+    const [creatorTokenAccount] = PublicKey.findProgramAddressSync(
+      [
+        creatorPubkey.toBuffer(),
+        TOKEN_PROGRAM_ID.toBuffer(),
+        mintPubkey.toBuffer(),
+      ],
+      new PublicKey('ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL')
+    );
+    
+    const accountInfo = await connection.getAccountInfo(creatorTokenAccount);
+    
+    if (!accountInfo) return false;
+    
+    // Read token balance (8 bytes at offset 64)
+    const balance = Number(accountInfo.data.readBigUInt64LE(64));
+    
+    // If creator has 30M+ tokens, they claimed
+    return balance >= 30_000_000_000_000; // 30M with 6 decimals
+  } catch (error) {
+    console.error('Error checking dev tokens:', error);
+    return false; // Assume not claimed if error
+  }
 };
 
 export default function AdminDashboard() {
@@ -196,7 +231,14 @@ export default function AdminDashboard() {
                   {/* Stats */}
                   <div className="text-left sm:text-right">
                     <p className="text-yellow-400 font-bold text-2xl">81.00 SOL</p>
-                    <p className="text-gray-400 text-lg">{token.tokensInCurve.toFixed(0)}M tokens</p>
+                    <p className="text-gray-400 text-lg">
+                      {token.devTokensClaimed ? '200M' : '230M'} tokens
+                    </p>
+                    {!token.devTokensClaimed && (
+                      <p className="text-orange-400 text-xs mt-1">
+                        ⚠️ Includes 30M dev tokens (unclaimed)
+                      </p>
+                    )}
                     <p className="text-gray-500 text-xs sm:text-sm mt-2">
                       {new Date(token.graduatedAt * 1000).toLocaleString()}
                     </p>
@@ -233,9 +275,11 @@ export default function AdminDashboard() {
             <li>• Click button to distribute funds:</li>
             <li className="ml-4 sm:ml-6">- Platform: 79 SOL (4 fee + 75 LP)</li>
             <li className="ml-4 sm:ml-6">- Creator: 2 SOL</li>
-            <li className="ml-4 sm:ml-6">- Platform has 200M tokens for LP</li>
+            <li>• Platform LP allocation:</li>
+            <li className="ml-4 sm:ml-6">- If dev claimed: <span className="text-green-400">200M tokens</span></li>
+            <li className="ml-4 sm:ml-6">- If dev NOT claimed: <span className="text-orange-400">230M tokens</span> (includes unclaimed 30M)</li>
             <li>• Follow instructions to create Raydium pool</li>
-            <li>• Creator claims 30M dev tokens from token page</li>
+            <li>• Creator can claim 30M dev tokens from token page</li>
           </ul>
         </div>
       </div>
