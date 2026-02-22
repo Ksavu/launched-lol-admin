@@ -48,7 +48,7 @@ export async function processGraduationFunds(
 
     // Discriminator for process_graduation_funds
     // SHA256("global:process_graduation_funds")[0..8]
-    const instructionData = Buffer.from([174, 89, 73, 242, 94, 197, 102, 156]);
+    const instructionData = Buffer.from([126, 127, 152, 176, 85, 150, 101, 195]);
 
     const instruction = {
       keys: [
