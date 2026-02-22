@@ -33,18 +33,22 @@ export async function GET(request: NextRequest) {
           const creator = new PublicKey(data.slice(8, 40));
           const tokenMint = new PublicKey(data.slice(40, 72));
           
+          // Read is_active flag (offset 168)
+          const isActive = data[168] === 1;
+          
           // Read graduated flag (offset 187)
           const graduated = data[187] === 1;
           if (!graduated) return null;
           
           // Read reserves
           const realSolReserves = Number(data.readBigUInt64LE(152));
-          const realTokenReserves = Number(data.readBigUInt64LE(160));
           
-          // ✅ Only show tokens with enough SOL to process (81+ SOL)
+          // ✅ Show graduated tokens even if SOL was already withdrawn
           const solBalance = realSolReserves / 1e9;
-          if (solBalance < 81) {
-            console.log(`${pubkey.toBase58().slice(0, 8)}: Skip (only ${solBalance.toFixed(2)} SOL)`);
+          
+          // ✅ Skip if already processed (is_active == false and SOL < 1)
+          if (!isActive && solBalance < 1) {
+            console.log(`${pubkey.toBase58().slice(0, 8)}: Already processed (inactive, ${solBalance.toFixed(4)} SOL)`);
             return null;
           }
           
@@ -52,7 +56,7 @@ export async function GET(request: NextRequest) {
           const devSupply = Number(data.readBigUInt64LE(204));
           const devTokensClaimed = devSupply === 0;
           
-          console.log(`${pubkey.toBase58().slice(0, 8)}: dev_supply = ${devSupply / 1e6 / 1e6}M, claimed = ${devTokensClaimed}`);
+          console.log(`${pubkey.toBase58().slice(0, 8)}: ${solBalance.toFixed(2)} SOL, dev_supply = ${devSupply / 1e6 / 1e6}M, active = ${isActive}`);
           
           // Fetch token metadata
           const metadataAccounts = await connection.getProgramAccounts(TOKEN_FACTORY_PROGRAM_ID, {
@@ -101,6 +105,7 @@ export async function GET(request: NextRequest) {
             graduatedAt,
             lpCreated: false,
             devTokensClaimed,
+            isActive,
           };
         } catch (error) {
           console.error('Error parsing token:', error);
@@ -113,7 +118,7 @@ export async function GET(request: NextRequest) {
       .filter(t => t !== null)
       .sort((a, b) => b!.graduatedAt - a!.graduatedAt);
     
-    console.log(`✅ Found ${validTokens.length} graduated tokens (with 81+ SOL)`);
+    console.log(`✅ Found ${validTokens.length} graduated tokens ready to process`);
     
     return NextResponse.json({ tokens: validTokens });
   } catch (error) {
