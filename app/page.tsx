@@ -120,39 +120,46 @@ export default function AdminDashboard() {
     }
   };
 
-  const handleCreatePool = async (token: GraduatedToken) => {
-    if (!confirm(`Process graduation for ${token.name}?\n\nThis will distribute 79 SOL to platform and 2 SOL to creator.`)) {
-      return;
+const handleCreatePool = async (token: GraduatedToken) => {
+  if (!confirm(`Process graduation for ${token.name}?\n\nThis will:\n- Distribute 81 SOL (4 platform, 2 creator, 75 LP)\n- Transfer tokens to platform\n- Deactivate bonding curve`)) {
+    return;
+  }
+
+  setProcessing(token.mint);
+
+  try {
+    const response = await fetch('/api/admin/create-raydium-pool', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        bondingCurve: token.bondingCurve,
+        tokenMint: token.mint,
+      }),
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.error || 'Failed to process graduation');
     }
-    
-    setProcessing(token.mint);
-    try {
-      const response = await fetch('/api/admin/create-raydium-pool', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          bondingCurve: token.bondingCurve,
-          tokenMint: token.mint,
-        }),
-      });
+
+    if (data.success) {
+      // ✅ Show success message
+      alert(`✅ Success!\n\nFunds distributed:\n- ${data.funds.platformReceived}\n- ${data.funds.creatorReceived}\n\nTX: ${data.funds.processFundsTxid}\n\n${data.message}`);
       
-      const data = await response.json();
-      
-      if (data.success) {
-        setFundsResult(data.funds);
-        setPoolInstructions(data.raydium.instructions);
-        
-        // Mark as processed
-        setProcessedTokens(prev => new Set(prev).add(token.mint));
-      } else {
-        alert(`❌ Error: ${data.error}`);
-      }
-    } catch (error) {
-      alert(`❌ Error: ${error}`);
-    } finally {
-      setProcessing(null);
+      // ✅ Refresh the token list
+      fetchGraduatedTokens();
+    } else {
+      throw new Error(data.error || 'Unknown error');
     }
-  };
+
+  } catch (error: any) {
+    console.error('Error processing graduation:', error);
+    alert(`❌ Error: ${error.message}`);
+  } finally {
+    setProcessing(null);
+  }
+};
 
   const isProcessed = (mint: string) => processedTokens.has(mint);
 

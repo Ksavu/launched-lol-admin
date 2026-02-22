@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from 'next/server';
 import { Connection, Keypair, PublicKey } from '@solana/web3.js';
 import { callGraduateToken } from '../../../../lib/graduate-token';
 import { processGraduationFunds } from '../../../../lib/process-graduation-funds';
-import { createRaydiumStandardPool } from '../../../../lib/raydium-helper';
 
 const connection = new Connection('https://api.devnet.solana.com', 'confirmed');
 
@@ -34,10 +33,10 @@ export async function POST(request: NextRequest) {
     const balanceSOL = balance / 1e9;
     console.log(`📊 Bonding curve balance: ${balanceSOL} SOL`);
     
-    if (balanceSOL < 81) {
+    if (balanceSOL < 1) {
       return NextResponse.json({
         success: false,
-        error: `Insufficient balance: ${balanceSOL.toFixed(4)} SOL (need 81 SOL)`,
+        error: `Insufficient balance: ${balanceSOL.toFixed(4)} SOL (need at least 1 SOL)`,
       }, { status: 400 });
     }
 
@@ -55,10 +54,9 @@ export async function POST(request: NextRequest) {
     } catch (error: any) {
       console.log('⚠️ graduate_token failed:', error.message);
       // Continue anyway - might have been called before
-      // This is OK if LP tokens were already transferred
     }
 
-    // Step 2: Process graduation funds (distribute SOL + transfer remaining tokens + close PDAs)
+    // Step 2: Process graduation funds (distribute SOL + transfer remaining tokens)
     console.log('Step 2: Processing graduation funds...');
     const fundsResult = await processGraduationFunds(
       connection,
@@ -77,16 +75,7 @@ export async function POST(request: NextRequest) {
 
     console.log('✅ Funds distributed! TX:', fundsResult.txid);
 
-    // Step 3: Get Raydium pool creation instructions
-    console.log('Step 3: Raydium pool creation instructions...');
-    const poolResult = await createRaydiumStandardPool(
-      connection,
-      platformKeypair,
-      mintAddress,
-      200_000_000_000_000, // 200M tokens with 6 decimals
-      75_000_000_000, // 75 SOL in lamports
-    );
-
+    // Step 3: Return success with Raydium instructions
     return NextResponse.json({
       success: true,
       funds: {
@@ -95,8 +84,22 @@ export async function POST(request: NextRequest) {
         platformReceived: fundsResult.platformReceived,
         creatorReceived: fundsResult.creatorReceived,
       },
-      raydium: poolResult,
-      message: '✅ Complete! Bonding curve closed. Platform has tokens + SOL. Follow Raydium instructions.',
+      raydium: {
+        message: '✅ Graduation complete! Bonding curve deactivated.',
+        instructions: [
+          'Platform wallet now has tokens + 75 SOL for Raydium pool',
+          'Create Raydium Standard AMM pool manually:',
+          '1. Go to https://raydium.io/liquidity/create/',
+          '2. Select "Standard AMM"',
+          '3. Base Token: Your token address',
+          '4. Quote Token: SOL',
+          '5. Initial Price: Use platform tokens + 75 SOL',
+          '6. After pool creation, burn LP tokens for permanent liquidity',
+        ],
+        tokenMint: mintAddress.toBase58(),
+        bondingCurve: bondingCurveAddress.toBase58(),
+      },
+      message: '✅ Complete! Token graduated and funds distributed. Create Raydium pool manually.',
     });
 
   } catch (error: any) {
