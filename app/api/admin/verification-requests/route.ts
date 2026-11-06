@@ -3,7 +3,7 @@ import { Connection, PublicKey } from '@solana/web3.js';
 
 const connection = new Connection('https://api.devnet.solana.com', 'confirmed');
 const SOCIAL_REGISTRY_PROGRAM_ID = new PublicKey('K3Fp6EiRsECtYbj63aG52D7rn2DiJdaLaxnN8MFpprh');
-const TOKEN_FACTORY_PROGRAM_ID = new PublicKey('7F4JYKAEs7VhVd9P8E1wHhd8aiwtKYeo1tTxabDqpCvX');
+const TOKEN_FACTORY_PROGRAM_ID = new PublicKey('2EaWbZdHaXz1Z5jdTE84kgbQhf4YAR1kY2V13g9SWA');
 
 export async function GET() {
   try {
